@@ -35,16 +35,12 @@ class UserRegisterSerializer(serializers.ModelSerializer):
         required=True,
         validators=[validate_password]
     )
-    password2 = serializers.CharField(
+    confirm_password = serializers.CharField(
         write_only=True,
         required=True
     )
     university = serializers.PrimaryKeyRelatedField(
         queryset=University.objects.all(),
-        required=False
-    )
-    campus = serializers.PrimaryKeyRelatedField(
-        queryset=Campus.objects.all(),
         required=False
     )
 
@@ -54,11 +50,10 @@ class UserRegisterSerializer(serializers.ModelSerializer):
             'username',
             'email',
             'password',
-            'password2',
+            'confirm_password',
             'first_name',
             'last_name',
-            'university',
-            'campus'
+            'university'
         ]
         extra_kwargs = {
             'username': {'required': True},
@@ -69,7 +64,7 @@ class UserRegisterSerializer(serializers.ModelSerializer):
         """
         Validate password matching and unique username
         """
-        if attrs['password'] != attrs.pop('password2'):
+        if attrs['password'] != attrs.pop('confirm_password'):
             raise serializers.ValidationError(
                 {"password": "Password fields didn't match."}
             )
@@ -93,8 +88,7 @@ class UserRegisterSerializer(serializers.ModelSerializer):
                 password=validated_data['password'],
                 first_name=validated_data.get('first_name', ''),
                 last_name=validated_data.get('last_name', ''),
-                university=validated_data.get('university', None),
-                campus=validated_data.get('campus', None)
+                university=validated_data.get('university', None)
             )
             return user
         except Exception as e:
@@ -152,7 +146,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
     Serializer for user profile
     """
     university = UniversitySerializer(read_only=True)
-    campus = CampusSerializer(read_only=True)
 
     class Meta:
         model = Account
@@ -163,7 +156,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'first_name',
             'last_name',
             'university',
-            'campus',
             'integrity_points'
         ]
         read_only_fields = ['id', 'username', 'integrity_points']

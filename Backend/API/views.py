@@ -53,8 +53,7 @@ class UserLogin(APIView):
                 'message': 'Login successful',
                 'user_id': user.id,
                 'username': user.username,
-                'university': user.university.name if user.university else None,
-                'campus': user.campus.name if user.campus else None
+                'university': user.university.name if user.university else None
             }, status=status.HTTP_200_OK)
         except ValidationError as e:
             return Response({
