@@ -13,10 +13,10 @@ class University(models.Model):
         max_length=100,
         unique=True
     )
-    campuses = models.JSONField(
-        _('Campus Locations'),
-        blank=True,
-        null=True
+    acronym = models.CharField(
+        _('University Acronym'),
+        max_length=100,
+        unique=True
     )
 
     class Meta:
