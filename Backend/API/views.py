@@ -13,6 +13,141 @@ from .models import *
 from .helpers import *
 
 
+class ReportCategoryViewSet(viewsets.ModelViewSet):
+    """
+    Viewset for managing report categories
+    """
+    queryset = ReportCategory.objects.all()
+    serializer_class = ReportCategorySerializer
+    permission_classes = [IsAuthenticated]
+
+    def create(self, request):
+        """
+        Create a new report category
+        """
+        serializer = self.get_serializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response({
+                'message': 'Report category created successfully',
+                'category': serializer.data
+            }, status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            return Response({
+                'error': 'Report category creation failed',
+                'details': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ReportViewSet(viewsets.ModelViewSet):
+    """
+    Viewset for managing reports
+    """
+    queryset = Report.objects.all()
+    serializer_class = ReportSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        Limit queryset to reports from the user's university
+        """
+        return Report.objects.filter(university=self.request.user.university)
+
+    def create(self, request):
+        """
+        Create a new report
+        """
+        # Add the current user as the poster
+        request.data['posted_by'] = request.user.id
+
+        serializer = self.get_serializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+            report = serializer.save()
+            return Response({
+                'message': 'Report submitted successfully',
+                'report_id': report.id,
+                'title': report.title
+            }, status=status.HTTP_201_CREATED)
+        except ValidationError as e:
+            return Response({
+                'error': 'Report submission failed',
+                'details': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'], url_path='my-reports')
+    def my_reports(self, request):
+        """
+        Retrieve reports submitted by the current user
+        """
+        reports = Report.objects.filter(posted_by=request.user)
+        serializer = self.get_serializer(reports, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['put'], url_path='update-status')
+    def update_report_status(self, request, pk=None):
+        """
+        Update the status of a specific report
+        """
+        try:
+            report = self.get_object()
+
+            # Validate status
+            new_status = request.data.get('status')
+            if new_status not in dict(Report.STATUS_CHOICES):
+                return Response({
+                    'error': 'Invalid status',
+                    'valid_choices': dict(Report.STATUS_CHOICES).keys()
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            serializer = self.get_serializer(
+                report, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response({
+                    'message': 'Report status updated successfully',
+                    'report': serializer.data
+                }, status=status.HTTP_200_OK)
+
+            return Response({
+                'error': 'Status update failed',
+                'details': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Report.DoesNotExist:
+            return Response({
+                'error': 'Report not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+    @action(detail=False, methods=['get'], url_path='stats')
+    def report_statistics(self, request):
+        """
+        Retrieve report statistics for the user's university
+        """
+        # Assuming we want to count reports by status
+        stats = {
+            'total_reports': Report.objects.filter(university=request.user.university).count(),
+            'reports_by_status': {
+                status: Report.objects.filter(
+                    university=request.user.university,
+                    status=status
+                ).count() for status, _ in Report.STATUS_CHOICES
+            },
+            'reports_by_category': [
+                {
+                    'category': category.name,
+                    'count': Report.objects.filter(
+                        university=request.user.university,
+                        category=category
+                    ).count()
+                } for category in ReportCategory.objects.all()
+            ]
+        }
+
+        return Response(stats, status=status.HTTP_200_OK)
+
+
 class UserRegister(APIView):
     """
     API endpoint for user registration

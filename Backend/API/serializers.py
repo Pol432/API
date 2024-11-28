@@ -1,9 +1,140 @@
 from rest_framework import serializers
+from django.utils.translation import gettext_lazy as _
+
 from django.contrib.auth import authenticate
-from django.core.exceptions import ValidationError
 from django.contrib.auth.password_validation import validate_password
 
-from .models import Account, University, Campus
+from django.core.validators import FileExtensionValidator
+from django.core.exceptions import ValidationError
+
+from .models import Account, University, Campus, ReportCategory, Report
+
+
+class ReportCategorySerializer(serializers.ModelSerializer):
+    """
+    Serializer for ReportCategory model
+    """
+    class Meta:
+        model = ReportCategory
+        fields = ['id', 'name', 'description']
+        read_only_fields = ['id']
+
+
+class ReportSerializer(serializers.ModelSerializer):
+    """
+    Serializer for Report model with additional validation and representation
+    """
+    # Custom fields for enhanced representation
+    category_name = serializers.SerializerMethodField(read_only=True)
+    posted_by_username = serializers.SerializerMethodField(read_only=True)
+
+    # Optional image upload with validation
+    image = serializers.ImageField(
+        required=False,
+        validators=[FileExtensionValidator(['png', 'jpg', 'jpeg'])],
+        allow_null=True
+    )
+
+    class Meta:
+        model = Report
+        fields = [
+            'id',
+            'university',
+            'campus',
+            'title',
+            'description',
+            'category',
+            'category_name',
+            'image',
+            'specific_location',
+            'status',
+            'posted_by',
+            'posted_by_username',
+            'created_at',
+            'updated_at',
+            'occured_at'
+        ]
+        read_only_fields = [
+            'id',
+            'created_at',
+            'updated_at',
+            'posted_by_username'
+        ]
+
+    def get_category_name(self, obj):
+        """
+        Retrieve the name of the report category
+        """
+        return obj.category.name if obj.category else None
+
+    def get_posted_by_username(self, obj):
+        """
+        Retrieve the username of the user who posted the report
+        """
+        return obj.posted_by.username if obj.posted_by else None
+
+    def validate(self, data):
+        """
+        Additional validation for report creation
+        """
+        # Ensure title is not empty
+        if not data.get('title'):
+            raise serializers.ValidationError({
+                'title': _('Report title cannot be empty')
+            })
+
+        # Ensure description is not too short
+        if len(data.get('description', '')).strip() < 10:
+            raise serializers.ValidationError({
+                'description': _('Description must be at least 10 characters long')
+            })
+
+        # Validate university matches user's university
+        user = self.context['request'].user
+        if 'university' in data and data['university'] != user.university.name:
+            raise serializers.ValidationError({
+                'university': _('You can only create reports for your own university')
+            })
+
+        return data
+
+    def create(self, validated_data):
+        """
+        Custom create method to set posted_by and university
+        """
+        user = self.context['request'].user
+
+        # Set posted_by to current user
+        validated_data['posted_by'] = user
+
+        # Set university from user's university
+        validated_data['university'] = user.university.name
+
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        """
+        Custom update method with additional validation
+        """
+        # Prevent changing posted_by
+        validated_data.pop('posted_by', None)
+
+        # Only allow certain fields to be updated based on user role/status
+        user = self.context['request'].user
+        updatable_fields = ['title', 'description',
+                            'image', 'specific_location']
+
+        # If the user is the original poster, allow more updates
+        if instance.posted_by == user:
+            updatable_fields.extend(['category', 'status'])
+
+        for field in validated_data:
+            if field not in updatable_fields:
+                raise serializers.ValidationError({
+                    field: _('You are not allowed to modify this field')
+                })
+
+        return super().update(instance, validated_data)
 
 
 class UniversitySerializer(serializers.ModelSerializer):
