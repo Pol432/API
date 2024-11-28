@@ -7,7 +7,9 @@ from .views import (
     UserProfileViewSet,
     PasswordResetView,
     ReportViewSet,
-    ReportCategoryViewSet
+    ReportCategoryViewSet,
+    UniversityViewSet,
+    CampusViewSet
 )
 
 # Create routers for ViewSets
@@ -19,6 +21,11 @@ report_router.register(r'reports', ReportViewSet, basename='report')
 report_router.register(
     r'categories', ReportCategoryViewSet, basename='report-category')
 
+university_router = DefaultRouter()
+university_router.register(
+    r'universities', UniversityViewSet, basename='university')
+university_router.register(r'campuses', CampusViewSet, basename='campus')
+
 urlpatterns = [
     # Authentication URLs
     path('register', UserRegister.as_view(), name='register'),
@@ -26,9 +33,8 @@ urlpatterns = [
     path('logout', UserLogout.as_view(), name='logout'),
     path('password-reset', PasswordResetView.as_view(), name='password_reset'),
 
-    # Include the routes for UserProfileViewSet
+    # Include the routes for different ViewSets
     path('', include(profile_router.urls)),
-
-    # Include the routes for ReportViewSet and ReportCategoryViewSet
     path('', include(report_router.urls)),
+    path('', include(university_router.urls)),
 ]

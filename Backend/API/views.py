@@ -13,6 +13,128 @@ from .models import *
 from .helpers import *
 
 
+class UniversityViewSet(viewsets.ModelViewSet):
+    """
+    Viewset for managing universities
+    """
+    queryset = University.objects.all()
+    serializer_class = UniversitySerializer
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=True, methods=['get'], url_path='campuses')
+    def list_campuses(self, request, pk=None):
+        """
+        Retrieve all campuses for a specific university
+        """
+        try:
+            university = self.get_object()
+            campuses = university.campus_set.all()
+            serializer = CampusSerializer(campuses, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except University.DoesNotExist:
+            return Response({
+                'error': 'University not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+    @action(detail=False, methods=['get'], url_path='search')
+    def search_universities(self, request):
+        """
+        Search universities by name
+        """
+        query = request.query_params.get('name', '')
+        universities = University.objects.filter(name__icontains=query)
+        serializer = self.get_serializer(universities, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='add-campus')
+    def add_campus(self, request, pk=None):
+        """
+        Add a new campus to the university
+        """
+        try:
+            university = self.get_object()
+
+            # Create campus with university reference
+            campus_serializer = CampusSerializer(data={
+                **request.data,
+                'university': university.id
+            })
+
+            if campus_serializer.is_valid():
+                campus = campus_serializer.save()
+                return Response({
+                    'message': 'Campus added successfully',
+                    'campus': campus_serializer.data
+                }, status=status.HTTP_201_CREATED)
+
+            return Response({
+                'error': 'Campus creation failed',
+                'details': campus_serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        except University.DoesNotExist:
+            return Response({
+                'error': 'University not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+
+class CampusViewSet(viewsets.ModelViewSet):
+    """
+    Viewset for managing campuses
+    """
+    queryset = Campus.objects.all()
+    serializer_class = CampusSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        Optionally filter campuses by university
+        """
+        university_id = self.request.query_params.get('university')
+        if university_id:
+            return Campus.objects.filter(university_id=university_id)
+        return Campus.objects.all()
+
+    @action(detail=False, methods=['get'], url_path='by-university')
+    def campuses_by_university(self, request):
+        """
+        List campuses for a specific university
+        """
+        university_id = request.query_params.get('university_id')
+        if not university_id:
+            return Response({
+                'error': 'University ID is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            campuses = Campus.objects.filter(university_id=university_id)
+            serializer = self.get_serializer(campuses, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['get'], url_path='search')
+    def search_campuses(self, request):
+        """
+        Search campuses by name or university
+        """
+        query = request.query_params.get('name', '')
+        university_id = request.query_params.get('university_id')
+
+        queryset = Campus.objects.all()
+
+        if query:
+            queryset = queryset.filter(name__icontains=query)
+
+        if university_id:
+            queryset = queryset.filter(university_id=university_id)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
 class ReportCategoryViewSet(viewsets.ModelViewSet):
     """
     Viewset for managing report categories

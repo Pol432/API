@@ -10,6 +10,140 @@ from django.core.exceptions import ValidationError
 from .models import Account, University, Campus, ReportCategory, Report
 
 
+from rest_framework import serializers
+from django.utils.translation import gettext_lazy as _
+
+from .models import University, Campus
+
+
+class CampusSerializer(serializers.ModelSerializer):
+    """
+    Serializer for Campus model
+    """
+    university_name = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = Campus
+        fields = [
+            'id',
+            'name',
+            'university',
+            'university_name',
+            'address'
+        ]
+        read_only_fields = ['id']
+
+    def get_university_name(self, obj):
+        """
+        Retrieve the name of the associated university
+        """
+        return obj.university.name if obj.university else None
+
+    def validate(self, data):
+        """
+        Additional validation for campus creation/update
+        """
+        # Ensure name is not empty
+        if not data.get('name'):
+            raise serializers.ValidationError({
+                'name': _('Campus name cannot be empty')
+            })
+
+        # Ensure university is provided
+        if not data.get('university'):
+            raise serializers.ValidationError({
+                'university': _('University is required')
+            })
+
+        return data
+
+
+class UniversitySerializer(serializers.ModelSerializer):
+    """
+    Serializer for University model with enhanced functionality
+    """
+    campus_count = serializers.SerializerMethodField(read_only=True)
+    campuses = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = University
+        fields = [
+            'id',
+            'name',
+            'campuses',
+            'campus_count'
+        ]
+        read_only_fields = ['id', 'campus_count', 'campuses']
+
+    def get_campus_count(self, obj):
+        """
+        Count the number of campuses for the university
+        """
+        return obj.campus_set.count()
+
+    def get_campuses(self, obj):
+        """
+        Retrieve campus details for the university
+        """
+        campuses = obj.campus_set.all()
+        return CampusSerializer(campuses, many=True).data
+
+    def validate_name(self, value):
+        """
+        Validate university name uniqueness
+        """
+        # Check if a university with this name already exists
+        if University.objects.exclude(pk=self.instance.pk if self.instance else None).filter(name=value).exists():
+            raise serializers.ValidationError(
+                _('A university with this name already exists')
+            )
+
+        # Ensure name is not empty
+        if not value.strip():
+            raise serializers.ValidationError(
+                _('University name cannot be empty')
+            )
+
+        return value
+
+    def create(self, validated_data):
+        """
+        Custom create method to handle campuses if provided
+        """
+        # Remove campuses from validated data if present
+        campuses_data = validated_data.pop('campuses', [])
+
+        # Create university
+        university = University.objects.create(**validated_data)
+
+        # Create associated campuses if provided
+        for campus_data in campuses_data:
+            Campus.objects.create(university=university, **campus_data)
+
+        return university
+
+    def update(self, instance, validated_data):
+        """
+        Custom update method with additional handling
+        """
+        # Remove campuses from validated data if present
+        campuses_data = validated_data.pop('campuses', None)
+
+        # Update university instance
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        # Optionally handle campus updates if needed
+        if campuses_data is not None:
+            # Clear existing campuses and recreate
+            instance.campus_set.all().delete()
+            for campus_data in campuses_data:
+                Campus.objects.create(university=instance, **campus_data)
+
+        return instance
+
+
 class ReportCategorySerializer(serializers.ModelSerializer):
     """
     Serializer for ReportCategory model
@@ -135,26 +269,6 @@ class ReportSerializer(serializers.ModelSerializer):
                 })
 
         return super().update(instance, validated_data)
-
-
-class UniversitySerializer(serializers.ModelSerializer):
-    """
-    Serializer for University model
-    """
-    class Meta:
-        model = University
-        fields = ['id', 'name', 'short_code']
-
-
-class CampusSerializer(serializers.ModelSerializer):
-    """
-    Serializer for Campus model
-    """
-    university = UniversitySerializer(read_only=True)
-
-    class Meta:
-        model = Campus
-        fields = ['id', 'name', 'university', 'address']
 
 
 class UserRegisterSerializer(serializers.ModelSerializer):
